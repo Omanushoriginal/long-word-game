@@ -2,7 +2,7 @@
 
 A real-time word game for solo play and multiplayer rooms. Everyone in a room gets the same shuffled rack and guesses at the same time from their own device. Rooms can be public or private, host-configured for 1–20 rounds and 15 seconds–5 minutes per round, and score by word length or placement.
 
-The browser app is hosted by GitHub Pages. Supabase provides persistent room storage and Realtime updates, while an Edge Function checks words and controls room actions. Oxford API credentials stay on the server side in Supabase secrets.
+The browser app is hosted by GitHub Pages. Supabase provides persistent room storage and Realtime updates, while an Edge Function checks words and controls room actions. Word validation uses a bundled, open English word list and works without a paid dictionary API.
 
 ## Create a Supabase project
 
@@ -20,14 +20,14 @@ The browser app is hosted by GitHub Pages. Supabase provides persistent room sto
 
    The project ref is the subdomain in the Project URL, before `.supabase.co`.
 
-5. To verify words with Oxford, set the API credentials as Supabase secrets and redeploy the function:
+5. The game works without Oxford credentials. Optionally, to accept words outside the bundled list through Oxford, set API credentials as Supabase secrets and redeploy the function:
 
    ```sh
    supabase secrets set OXFORD_APP_ID=your-app-id OXFORD_APP_KEY=your-app-key
-   supabase functions deploy rooms
+   supabase functions deploy dynamic-worker
    ```
 
-   Without Oxford credentials, the function labels the game as sample-word mode and checks against its bundled demonstration list. Oxford API access and the English dataset are required for live Oxford verification.
+   Oxford access may require a paid plan. Without these optional secrets, both local and multiplayer games use the bundled word list for round generation and submissions.
 
 ## Run locally
 
@@ -38,6 +38,8 @@ npm start
 ```
 
 Open [http://localhost:4173](http://localhost:4173). This local server uses in-memory rooms; it is useful for trying the interface, but it does not share rooms across separate deployments.
+
+Run the dictionary checks with `npm test`.
 
 ## Publish the website
 
@@ -50,6 +52,7 @@ The included GitHub Actions workflow publishes the static app to GitHub Pages wh
 - The database denies direct browser table access. The Edge Function uses the private service-role key on the server and issues each player a random room token; only its hash is stored in the database.
 - Supabase Realtime broadcasts room changes. Clients fetch room state through the function using their player token.
 - Each round reveals the source word when time ends. Words must be at least 8 letters and must be constructible from the rack.
+- The bundled list contains 97,084 playable (8–32 letter) words from ESDB/SCOWL size 70, combining US and UK spellings at variant level 1. It is broad but cannot guarantee every English word; contributions and dictionaries differ on what counts as a word. The source is pinned to [ESDB commit `1e5b7d3`](https://github.com/en-wl/wordlist/tree/1e5b7d3a72f47a71da5d28686c1dd4b397178485), and its required notices are in [`word-list-license.txt`](./word-list-license.txt).
 - Oxford Dictionaries API data is a different product from the Oxford English Dictionary.
 
 ## License

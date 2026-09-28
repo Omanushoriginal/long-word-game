@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import wordList from "../_shared/word-list.json" with { type: "json" };
 
 const url = Deno.env.get("SUPABASE_URL")!;
 const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -9,16 +10,16 @@ const cors = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
-const WORDS = `adventure aftercare afternoon alignment alongside ambitious amplifier animation apartment attention beautiful beginning blueprint breakfast brilliant butterfly celebrate character chocolate classroom cleverest community confident connector craftwork dangerous dinosaur discovery education electric elephant emotional excellent exercise fantastic favourite fireplace flowering framework friendship generous gorgeous handcraft happiness headphone historical imagination important incredible invention landscape laughter lightning magazine marvellous mountain movement notebook objective otherwise overthink paintbrush parachute pineapple playfully precision presenter principle processor questions radiation remember sailboard sensitive signature something starshine strawberry sunflower teachable telephone telescope tomorrow transform treasure wonderful yesterday`.split(" ");
-const SAMPLE_WORDS = new Set((WORDS.join(" ") + ` apple about above after again alarm angel answer anyone around artist author autumn basket beacon become better bicycle birthday blossom building camera candle captain careful cartoon certain chicken children circle citizen classic climate cloud coastal collect color colours comfort compass computer concert cooking courage creative curious daylight delicious desktop diamond direction distance dolphin dreaming dynamic earliest eighteen energy engineer evening everyday example familiar festival finished floating football forever forest forgive fountain freedom friendly frozen furniture galaxy garden geometry golden grammar grateful gravity greatest grocery guidance harbour harmony healthy hearing heartbeat helpful holiday homework horizon hospital however hundred improve include industry internet island journey keyboard kindness language learning library lifestyle lonely loving machine magnetic manager markets maximum meadow meaning medicine memory midnight million mineral miniature minute miracle modern motion musical mystery natural necklace negative neighbor network northern number observe ocean online opposite ordinary original outdoors oxygen package paintings pancake paper paragraph parent passenger peaceful pebble pencil people perfect perfume personal photograph piano picnic picture planet pleasant pocket poetry popular positive possible potato powerful practise practice precious prepare present pretend princess probably produce promise properly pumpkin purpose puzzle quality question quiet rabbit rainbow railway random reading realistic reason recipe record regular republic resource restaurant river romantic rounded sandwich saturday science scissors seasonal secret sentence separate serious shadow shelter shoulder silver similar simply singing sister sketch sleepy smiling smoothie snowflake social solution someday southern sparkling speaker special splendid spotlight squirrel statement stomach stories strength student sunlight sunshine support surprise sweater swimming symbol talented teacher teamwork teenager temporary thankful theater theatre thinking thirsty thousand together tonight triangle tropical truthful umbrella universe vacation valuable vanilla variety vegetable vehicle vertical victory village violin visiting visitor volunteer walking waterfall weekend welcome western whatever wildlife window woodland writer writing`).split(" "));
-const LONG_WORDS = WORDS.filter(word => word.length >= 8);
+const WORDS: string[] = wordList;
+const WORD_SET = new Set(WORDS);
+const LONG_WORDS = WORDS;
 
 const response = (status: number, body: unknown) => new Response(JSON.stringify(body), {
   status, headers: { ...cors, "Content-Type": "application/json", "Cache-Control": "no-store" },
 });
 const fail = (message: string, status = 400) => response(status, { error: message });
 const isOxfordConfigured = () => !!(Deno.env.get("OXFORD_APP_ID") && Deno.env.get("OXFORD_APP_KEY"));
-const roomDictionary = () => isOxfordConfigured() ? "Oxford Dictionaries API · live" : "Sample list · add Oxford API credentials";
+const roomDictionary = () => "Open English word list (US/UK)";
 
 async function hashToken(token: string) {
   const bytes = new TextEncoder().encode(token);
@@ -35,9 +36,10 @@ function shuffle(word: string) {
 }
 
 async function dictionaryCheck(word: string) {
+  if (WORD_SET.has(word)) return { valid: true, source: "word-list" };
   const id = Deno.env.get("OXFORD_APP_ID");
   const key = Deno.env.get("OXFORD_APP_KEY");
-  if (!id || !key) return { valid: SAMPLE_WORDS.has(word), source: "sample" };
+  if (!id || !key) return { valid: false, source: "word-list" };
   const result = await fetch(`https://od-api.oxforddictionaries.com/api/v2/entries/en-gb/${encodeURIComponent(word)}`, {
     headers: { app_id: id, app_key: key }, signal: AbortSignal.timeout(6000),
   });
@@ -113,19 +115,10 @@ async function doStart(room: Record<string, any>, playerId: string) {
   if (playerId !== room.host_id) throw new Error("Only the host can start the game.");
   if (room.phase === "playing") throw new Error("The round is still in progress.");
   if (room.round >= room.total_rounds) throw new Error("All rounds have been played.");
-  let target = "";
-  let source = "sample";
-  if (isOxfordConfigured()) {
-    for (let i = 0; i < 5; i++) {
-      const candidate = LONG_WORDS[Math.floor(Math.random() * LONG_WORDS.length)];
-      const check = await dictionaryCheck(candidate);
-      if (check.valid && check.source === "oxford") { target = candidate; source = "oxford"; break; }
-    }
-    if (!target) throw new Error("Could not confirm a round word with Oxford. Check that the account and English dataset are active.");
-  } else target = LONG_WORDS[Math.floor(Math.random() * LONG_WORDS.length)];
+  const target = LONG_WORDS[Math.floor(Math.random() * LONG_WORDS.length)];
   const { error } = await db.rpc("longword_start_round", {
     room_code: room.id, requesting_player: playerId, round_word: target,
-    letter_rack: shuffle(target), source_name: source === "oxford" ? "Oxford Dictionaries API · live" : "Sample list · add Oxford API credentials",
+    letter_rack: shuffle(target), source_name: roomDictionary(),
   });
   if (error) throw error;
   await broadcastRoom(room.id);
@@ -212,7 +205,7 @@ Deno.serve(async req => {
       const word = String(input.word || "").toLowerCase().trim();
       if (!/^[a-z]{8,32}$/.test(word)) return fail("Enter a word with at least 8 letters.");
       const check = await dictionaryCheck(word);
-      if (!check.valid) return fail(`“${word}” was not found in the ${check.source === "oxford" ? "Oxford dictionary" : "sample dictionary"}.`, 422);
+      if (!check.valid) return fail(`“${word}” was not found in the ${check.source === "oxford" ? "Oxford dictionary" : "open English word list"}.`, 422);
       const { error } = await db.rpc("longword_submit", { room_code: roomId, requesting_player: player.id, submitted_word: word, source_name: check.source });
       if (error) {
         if (error.code === "23505") return fail("You have already submitted a word.", 409);

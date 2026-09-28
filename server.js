@@ -7,21 +7,9 @@ const PORT = Number(process.env.PORT || 4173);
 const ROOT = __dirname;
 const rooms = new Map();
 const dictionaryCache = new Map();
-const WORDS = [
-  'adventure','aftercare','afternoon','alignment','alongside','ambitious','amplifier','animation',
-  'apartment','attention','beautiful','beginning','blueprint','breakfast','brilliant','butterfly',
-  'celebrate','character','chocolate','classroom','cleverest','community','confident','connector',
-  'craftwork','dangerous','dinosaur','discovery','education','electric','elephant','emotional',
-  'excellent','exercise','fantastic','favourite','fireplace','flowering','framework','friendship',
-  'generous','gorgeous','handcraft','happiness','headphone','historical','imagination','important',
-  'incredible','invention','landscape','laughter','lightning','magazine','marvellous','mountain',
-  'movement','notebook','objective','otherwise','overthink','paintbrush','parachute','pineapple',
-  'playfully','precision','presenter','principle','processor','questions','radiation','remember',
-  'sailboard','sensitive','signature','something','starshine','strawberry','sunflower','teachable',
-  'telephone','telescope','tomorrow','transform','treasure','wonderful','yesterday'
-];
-const DEMO_WORDS = new Set((WORDS.join(' ') + ' apple about above after again alarm angel answer anyone around artist author autumn basket beacon become better bicycle birthday blossom building camera candle captain careful cartoon certain chicken children circle citizen city classic climate cloud coastal collect color colours comfort compass computer concert cooking courage creative curious daylight delicious desktop diamond direction distance dolphin dreaming dynamic earliest eighteen energy engineer evening everyday example familiar festival finished floating football forever forest forgive fountain freedom friendly frozen furniture galaxy garden generous geometry golden grammar grateful gravity greatest grocery guidance harbour harmony healthy hearing heartbeat helpful holiday homework horizon hospital house however hundred imagine improve include industry internet island journey keyboard kindness language learning library lifestyle lonely loving machine magnetic manager marigold markets maximum meadow meaning medicine memory midnight million mineral miniature minute miracle modern motion musical mystery natural necklace negative neighbor network northern notebook number observe ocean online opposite ordinary original outdoors oxygen package paintings pancake paper paragraph parent passenger peaceful pebble pencil people perfect perfume personal photograph piano picnic picture planet pleasant pocket poetry popular positive possible potato powerful practise practice precious prepare present pretend princess probably produce promise properly pumpkin purpose puzzle quality question quiet rabbit rainbow railway random reading realistic reason recipe record regular remember republic resource restaurant river romantic rounded sandwich saturday science scissors seasonal secret sentence separate serious shadow shelter shoulder silver similar simply singing sister sketch sleepy smiling smoothie snowflake social solution someday southern sparkling speaker special splendid spotlight squirrel statement stomach stories strength student sunlight sunshine support surprise sweater swimming symbol talented teacher teamwork teenager temporary thankful theater theatre thinking thirsty thousand together tomorrow tonight triangle tropical truthful umbrella universe vacation valuable vanilla variety vegetable vehicle vertical victory village violin visiting visitor volunteer walking waterfall weekend welcome western whatever wildlife window wonderful woodland writer writing' ).split(' '));
-const LONG_WORDS = WORDS.filter(word => word.length >= 8);
+const WORDS = require('./supabase/functions/_shared/word-list.json');
+const WORD_SET = new Set(WORDS);
+const LONG_WORDS = WORDS;
 
 const json = (res, status, data) => { res.writeHead(status, { 'Content-Type':'application/json; charset=utf-8', 'Cache-Control':'no-store', 'Access-Control-Allow-Origin':'*' }); res.end(JSON.stringify(data)); };
 function body(req) { return new Promise((resolve,reject) => { let s=''; req.on('data',c=>{s+=c;if(s.length>50000)req.destroy()}); req.on('end',()=>{try{resolve(JSON.parse(s||'{}'))}catch{reject(new Error('Invalid JSON'))}}); req.on('error',reject); }); }
@@ -32,22 +20,21 @@ function shuffle(word) { const a=word.toUpperCase().split(''); for(let i=a.lengt
 function playerFor(room, req) { const u=new URL(req.url,`http://${req.headers.host||'localhost'}`); const id=req.headers['x-player-id']||u.searchParams.get('player'); const token=req.headers['x-player-token']||u.searchParams.get('token'); const p=room?.players.get(id); return p && p.token===token?p:null; }
 async function dictionaryCheck(word) {
   const key=word.toLowerCase(); if(dictionaryCache.has(key))return dictionaryCache.get(key);
+  if(WORD_SET.has(key)){const data={valid:true,source:'word-list'};dictionaryCache.set(key,data);return data}
   const id=process.env.OXFORD_APP_ID, secret=process.env.OXFORD_APP_KEY;
   if(id&&secret){
     try {
       const r=await fetch(`https://od-api.oxforddictionaries.com/api/v2/entries/en-gb/${encodeURIComponent(key)}`,{headers:{app_id:id,app_key:secret},signal:AbortSignal.timeout(6000)});
       if(r.ok){const data={valid:true,source:'oxford'};dictionaryCache.set(key,data);return data;}
       if(r.status===404){const data={valid:false,source:'oxford'};dictionaryCache.set(key,data);return data;}
-      console.warn(`Oxford API returned ${r.status}; using the offline sample word list.`);
-    } catch(e) { console.warn(`Oxford API lookup failed: ${e.message}`); }
+      console.warn(`Oxford API returned ${r.status}; using the bundled English word list.`);
+    } catch(e) { console.warn(`Oxford API lookup failed: ${e.message}; using the bundled English word list.`); }
   }
-  const data={valid:DEMO_WORDS.has(key),source:'sample'}; dictionaryCache.set(key,data); return data;
+  const data={valid:false,source:'word-list'}; dictionaryCache.set(key,data); return data;
 }
 async function startRound(room) {
-  const priorPhase=room.phase; room.phase='starting';
-  let target=null; const hasOxford=!!(process.env.OXFORD_APP_ID&&process.env.OXFORD_APP_KEY);
-  try{if(hasOxford){for(let i=0;i<5;i++){const candidate=chooseWord();const check=await dictionaryCheck(candidate);if(check.valid&&check.source==='oxford'){target=candidate;break;}}if(!target)throw new Error('Could not confirm a round word with the Oxford API. Check that your API credentials and English dataset are active.');}
-  else target=chooseWord();}catch(e){room.phase=priorPhase;throw e;}
+  room.phase='starting';
+  const target=chooseWord();
   room.phase='playing'; room.round++; room.target=target; room.letters=shuffle(room.target); room.deadline=Date.now()+room.roundSeconds*1000; room.submissions={};
   if(room.timer)clearTimeout(room.timer);
   room.timer=setTimeout(()=>endRound(room),room.roundSeconds*1000);
@@ -66,7 +53,7 @@ function route(req,res){
   if(req.method==='GET'&&u.pathname==='/api/rooms')return json(res,200,{rooms:[...rooms.values()].filter(r=>r.visibility==='public'&&r.phase==='lobby').map(r=>({id:r.id,name:r.name,players:r.players.size,rounds:r.totalRounds,seconds:r.roundSeconds,scoring:r.scoring}))});
   if(parts[0]!=='api'||parts[1]!=='rooms')return serveStatic(req,res,u.pathname);
   if(req.method==='POST'&&parts.length===2){return body(req).then(({name,playerName,visibility,rounds,seconds,scoring})=>{
-    const rid=crypto.randomBytes(6).toString('hex').toUpperCase(); const room={id:rid,name:String(name||`${playerName||'Player'}’s room`).slice(0,32),visibility:visibility==='private'?'private':'public',phase:'lobby',round:0,totalRounds:Math.max(1,Math.min(20,Number(rounds)||5)),roundSeconds:Math.max(15,Math.min(300,Number(seconds)||60)),scoring:scoring==='placement'?'placement':'letters',target:null,letters:null,deadline:null,submissions:{},players:new Map(),clients:new Set(),host:null,timer:null,dictionary:process.env.OXFORD_APP_ID&&process.env.OXFORD_APP_KEY?'Oxford Dictionaries API · live':'Sample list · add Oxford API credentials'};
+    const rid=crypto.randomBytes(6).toString('hex').toUpperCase(); const room={id:rid,name:String(name||`${playerName||'Player'}’s room`).slice(0,32),visibility:visibility==='private'?'private':'public',phase:'lobby',round:0,totalRounds:Math.max(1,Math.min(20,Number(rounds)||5)),roundSeconds:Math.max(15,Math.min(300,Number(seconds)||60)),scoring:scoring==='placement'?'placement':'letters',target:null,letters:null,deadline:null,submissions:{},players:new Map(),clients:new Set(),host:null,timer:null,dictionary:'Open English word list · SCOWL size 70 (US + UK)'};
     const player={id:crypto.randomUUID(),name:String(playerName||'Player').trim().slice(0,18)||'Player',token:crypto.randomBytes(24).toString('hex'),score:0,online:true}; room.host=player.id;room.players.set(player.id,player);rooms.set(rid,room);return json(res,201,{...safe(room,player.id),token:player.token});
   }).catch(e=>json(res,400,{error:e.message}));}
   if(parts.length<3)return json(res,404,{error:'Not found'});
@@ -94,11 +81,11 @@ function route(req,res){
     if(room.phase!=='playing')return json(res,409,{error:'This round is closed.'});if(room.submissions[player.id])return json(res,409,{error:'You have already submitted a word.'});
     const value=String(word||'').toLowerCase().trim();if(!/^[a-z]{8,32}$/.test(value))return json(res,400,{error:'Enter a word with at least 8 letters.'});
     const available={};for(const ch of room.letters.toLowerCase())available[ch]=(available[ch]||0)+1;for(const ch of value){if(!available[ch])return json(res,400,{error:'That word cannot be made from these letters.'});available[ch]--;}
-    const check=await dictionaryCheck(value);if(!check.valid)return json(res,422,{error:`“${value}” was not found in the ${check.source==='oxford'?'Oxford dictionary':'sample dictionary'}.`});
+    const check=await dictionaryCheck(value);if(!check.valid)return json(res,422,{error:`“${value}” was not found in the ${check.source==='oxford'?'Oxford dictionary':'open English word list'}.`});
     if(room.phase!=='playing')return json(res,409,{error:'Time ran out before your word could be checked.'});room.submissions[player.id]={playerId:player.id,player:player.name,word:value,points:0,at:Date.now(),dictionary:check.source};publish(room);return json(res,200,{ok:true,source:check.source});
   }).catch(e=>json(res,400,{error:e.message}));
   json(res,404,{error:'Not found'});
 }
 const MIME={'.html':'text/html; charset=utf-8','.css':'text/css; charset=utf-8','.js':'text/javascript; charset=utf-8','.svg':'image/svg+xml'};
 function serveStatic(req,res,url){let target=path.join(ROOT,decodeURIComponent(url==='/'?'/index.html':url));if(!target.startsWith(ROOT))return json(res,403,{error:'Forbidden'});fs.readFile(target,(err,data)=>{if(err)return json(res,404,{error:'Not found'});res.writeHead(200,{'Content-Type':MIME[path.extname(target)]||'application/octet-stream','Cache-Control':'no-cache'});res.end(data);});}
-http.createServer((req,res)=>route(req,res).catch(e=>{console.error(e);if(!res.headersSent)json(res,500,{error:'Something went wrong.'});})).listen(PORT,'0.0.0.0',()=>console.log(`Longword is running at http://localhost:${PORT}`));
+http.createServer((req,res)=>Promise.resolve(route(req,res)).catch(e=>{console.error(e);if(!res.headersSent)json(res,500,{error:'Something went wrong.'});})).listen(PORT,'0.0.0.0',()=>console.log(`Longword is running at http://localhost:${PORT}`));
