@@ -1,0 +1,8 @@
+{
+  "name": "long-word-club",
+  "version": "1.0.0",
+  "private": true,
+  "description": "A real-time multiplayer long word game with Oxford Dictionary API verification.",
+  "scripts": { "start": "node server.js" },
+  "engines": { "node": ">=20" }
+}
