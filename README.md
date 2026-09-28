@@ -1,56 +1,57 @@
 # Longword
 
-A small, real-time multiplayer word game. Players race to find a dictionary word in each shuffled 8+ letter rack. It runs on Node.js 20 or later and has no npm dependencies.
+A real-time word game for solo play and multiplayer rooms. Everyone in a room gets the same shuffled rack and guesses at the same time from their own device. Rooms can be public or private, host-configured for 1–20 rounds and 15 seconds–5 minutes per round, and score by word length or placement.
 
-## Start it
+The browser app is hosted by GitHub Pages. Supabase provides persistent room storage and Realtime updates, while an Edge Function checks words and controls room actions. Oxford API credentials stay on the server side in Supabase secrets.
+
+## Create a Supabase project
+
+1. Create a project at [database.new](https://database.new). Save the database password somewhere private; it is needed when linking the CLI.
+2. In the project dashboard, open **Project Settings → API Keys** and copy the **Project URL** and **Publishable key** (older projects may call this the `anon` key).
+3. Put those two public values in `supabase-config.js`, replacing the placeholders. It is safe for this file to be served publicly. Never put a service-role key or database password in it or in GitHub.
+4. Install the [Supabase CLI](https://supabase.com/docs/guides/local-development/cli/getting-started), then from this repository run:
+
+   ```sh
+   supabase login
+   supabase link --project-ref YOUR-PROJECT-REF
+   supabase db push
+   supabase functions deploy rooms
+   ```
+
+   The project ref is the subdomain in the Project URL, before `.supabase.co`.
+
+5. To verify words with Oxford, set the API credentials as Supabase secrets and redeploy the function:
+
+   ```sh
+   supabase secrets set OXFORD_APP_ID=your-app-id OXFORD_APP_KEY=your-app-key
+   supabase functions deploy rooms
+   ```
+
+   Without Oxford credentials, the function labels the game as sample-word mode and checks against its bundled demonstration list. Oxford API access and the English dataset are required for live Oxford verification.
+
+## Run locally
+
+For the original Node.js development server, use Node.js 20 or later:
 
 ```sh
 npm start
 ```
 
-Open [http://localhost:4173](http://localhost:4173). No `npm install` is necessary because the game has no third-party Node dependencies.
+Open [http://localhost:4173](http://localhost:4173). This local server uses in-memory rooms; it is useful for trying the interface, but it does not share rooms across separate deployments.
 
-To let friends join from other devices, deploy the Node server where all players can reach it. Room lists, clocks, scoring, and submissions live on that server; room state is held in memory and resets when the server restarts. Public rooms appear in the open-room list. Private rooms stay out of the list and can be entered using their invite link or code.
+## Publish the website
 
-## Oxford dictionary
+The included GitHub Actions workflow publishes the static app to GitHub Pages whenever changes are pushed to `main`. In the repository, open **Settings → Pages** and choose **GitHub Actions** as the publishing source. The site will appear at `https://YOUR-USERNAME.github.io/YOUR-REPOSITORY/` after the workflow finishes. Supabase setup above is still needed for online multiplayer.
 
-To use Oxford Dictionaries for round-word and answer verification, set an Oxford Dictionaries API app ID and key in the server environment, then restart the server. Keep these credentials in your local environment or your hosting provider's secret settings. **Never commit API credentials to GitHub.**
+## Game and security notes
 
-PowerShell:
+- Rooms support up to 12 players; all players submit simultaneously.
+- Public rooms appear in the lobby. Private rooms require the room code or invite link.
+- The database denies direct browser table access. The Edge Function uses the private service-role key on the server and issues each player a random room token; only its hash is stored in the database.
+- Supabase Realtime broadcasts room changes. Clients fetch room state through the function using their player token.
+- Each round reveals the source word when time ends. Words must be at least 8 letters and must be constructible from the rack.
+- Oxford Dictionaries API data is a different product from the Oxford English Dictionary.
 
-```powershell
-$env:OXFORD_APP_ID = "your-app-id"
-$env:OXFORD_APP_KEY = "your-app-key"
-npm start
-```
+## License
 
-macOS/Linux:
-
-```sh
-OXFORD_APP_ID="your-app-id" OXFORD_APP_KEY="your-app-key" npm start
-```
-
-The server checks prospective round words against Oxford before displaying them, and checks each answer against Oxford before awarding points. The credentials stay on the server. Oxford's developer API requires account credentials and access to the English dataset; its sandbox has limited coverage. If the Oxford API is not configured, the game clearly reports sample-word mode and checks answers against the bundled demonstration word list instead. Do not use this small sample list as a production dictionary. Oxford Dictionaries API data is a different product from the Oxford English Dictionary.
-
-## Game settings
-
-- Solo play or rooms for up to 12 players.
-- Public room listing or private invite link.
-- 1–20 rounds and 15 seconds–5 minutes per round.
-- One point per letter, or 3/2/1 points for the longest three submissions.
-- Server-side clocks, letter rack validation, word verification, and scoring.
-
-## Put it on GitHub
-
-Create an empty repository on GitHub, then run these commands in this folder (replace the remote URL with your own):
-
-```sh
-git init
-git add .
-git commit -m "Add Longword game"
-git branch -M main
-git remote add origin https://github.com/YOUR-USERNAME/YOUR-REPOSITORY.git
-git push -u origin main
-```
-
-The `.gitignore` file excludes local environment secrets and generated files. This project does not include a license; add one if you want to grant others permission to reuse or modify the code.
+No license is included. Add one if you want to grant others permission to reuse or modify the code.
