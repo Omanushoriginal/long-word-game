@@ -2,6 +2,6 @@
 // Replace these placeholders after creating your Supabase project.
 window.LONGWORD_SUPABASE = {
   url: "https://rmplquoeyzboymaelqtq.supabase.co",
-  publishableKey: "sb_publishable_Zpyc-Z9NJ07COGr2Wu_hkg__VFUy6BT",
+  publishableKey: "sb_publishable_kyjJ5twYXICDu9j3jQUFNQ_qzZxl2mS",
   functionName: "dynamic-worker",
 };
