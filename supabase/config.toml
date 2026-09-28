@@ -1,2 +1,5 @@
 [functions.rooms]
 verify_jwt = false
+
+[functions.dynamic-worker]
+verify_jwt = false

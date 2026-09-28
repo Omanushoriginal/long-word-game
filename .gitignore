@@ -17,3 +17,6 @@ Thumbs.db
 # Local editor settings
 .vscode/
 .idea/
+
+# Supabase CLI cache
+supabase/.temp/

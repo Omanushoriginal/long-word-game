@@ -8,7 +8,7 @@ The browser app is hosted by GitHub Pages. Supabase provides persistent room sto
 
 1. Create a project at [database.new](https://database.new). Save the database password somewhere private; it is needed when linking the CLI.
 2. In the project dashboard, open **Project Settings → API Keys** and copy the **Project URL** and **Publishable key** (older projects may call this the `anon` key).
-3. Put those two public values in `supabase-config.js`, replacing the placeholders. It is safe for this file to be served publicly. Never put a service-role key or database password in it or in GitHub.
+3. Put those two public values in `supabase-config.js`, replacing the placeholders. If the Edge Function in the dashboard is named `dynamic-worker` instead of `rooms`, set `functionName` to that name. It is safe for this file to be served publicly. Never put a service-role key or database password in it or in GitHub.
 4. Install the [Supabase CLI](https://supabase.com/docs/guides/local-development/cli/getting-started), then from this repository run:
 
    ```sh
@@ -16,6 +16,7 @@ The browser app is hosted by GitHub Pages. Supabase provides persistent room sto
    supabase link --project-ref YOUR-PROJECT-REF
    supabase db push
    supabase functions deploy rooms
+   supabase functions deploy dynamic-worker
    ```
 
    The project ref is the subdomain in the Project URL, before `.supabase.co`.
